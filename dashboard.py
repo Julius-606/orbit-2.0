@@ -19,7 +19,7 @@ except ImportError:
     Github = None # Soft fail if user hasn't installed it
 
 # --- ⚙️ SETTINGS ---
-MAX_ARCHIVED_SESSIONS = 10 
+MAX_ARCHIVED_SESSIONS = 20 # 🆕 Increased Limit
 
 # --- 🔐 SECURE KEYCHAIN ---
 GEMINI_API_KEYS = []
@@ -199,7 +199,7 @@ def load_config():
             "interests": [],
             "ai_persona": "Standard Orbit",
             "lock_background": False,
-            "low_data_mode": False, # 🆕 Low Data Default
+            "low_data_mode": False, 
             "unit_inventory": {"General": ["Math", "Science", "History", "Coding"]}
         }
 
@@ -463,7 +463,7 @@ if config:
                     else:
                         st.error("⚠️ Connection Interrupted.")
 
-    # --- TAB 2: ARCHIVED SESSIONS ---
+    # --- TAB 2: ARCHIVED SESSIONS (UPDATED) ---
     with tab2:
         st.subheader("🗂️ Session Archives")
         st.caption(f"Storing last {MAX_ARCHIVED_SESSIONS} completed sessions.")
@@ -473,13 +473,25 @@ if config:
         if not archives:
             st.info("No archives found. Finish a chat and hit 'New Chat' to file it here.")
         else:
+            # 🆕 UPDATED LIST LOGIC WITH DELETE BUTTON
             for i, session in enumerate(archives):
-                label = f"📅 {session['timestamp']} | 📝 {session['summary']}"
-                with st.expander(label, expanded=False):
-                    for msg in session['messages']:
-                        role_icon = "👤" if msg['role'] == "user" else "🩺"
-                        st.markdown(f"**{role_icon} {msg['role'].title()}:** {msg['content']}")
-                        st.divider()
+                # We use columns: Left (Details) | Right (Delete Button)
+                c_view, c_del = st.columns([6, 1])
+                
+                with c_view:
+                    label = f"📅 {session['timestamp']} | 📝 {session['summary']}"
+                    with st.expander(label, expanded=False):
+                        for msg in session['messages']:
+                            role_icon = "👤" if msg['role'] == "user" else "🩺"
+                            st.markdown(f"**{role_icon} {msg['role'].title()}:** {msg['content']}")
+                            st.divider()
+                
+                with c_del:
+                    # Unique key needed for button inside loop
+                    if st.button("🗑️", key=f"del_sess_{i}", help="Delete this session"):
+                        config['archived_sessions'].pop(i)
+                        save_config(config)
+                        st.rerun()
 
     # --- TAB 3: CHAOS QUIZ GENERATOR ---
     with tab3:
