@@ -1,0 +1,30 @@
+name: Orbit Chaos Engine
+
+on:
+  schedule:
+    # Runs every 30 minutes (e.g., 10:00, 10:30, 11:00...)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  chaos-roll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Chaos Script
+        env:
+          # Mapping repository secrets to the script's environment
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GEMINI_KEYS: ${{ secrets.GEMINI_KEYS }}
+        run: python orbit.py
