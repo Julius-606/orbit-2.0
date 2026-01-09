@@ -3,7 +3,7 @@ name: Orbit Chaos Engine
 on:
   schedule:
     # Runs every 30 minutes (e.g., 10:00, 10:30, 11:00...)
-    - cron: '*/30 * * * *'
+    - cron: '*0 * * * *'
   workflow_dispatch:
 
 jobs:
