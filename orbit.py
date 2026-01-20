@@ -47,7 +47,7 @@ if not TELEGRAM_TOKEN or not GEMINI_API_KEYS:
 # --- 🎯 TARGET CONFIGURATION ---
 TARGET_IDS = [
     "6882899041",            # Your Personal ID
-    "-1003540692903"         # The Community Channel (Fixed with negative sign)
+    "-1003540692903"         # The Community Channel
 ]
 
 CURRENT_KEY_INDEX = 0
@@ -207,7 +207,9 @@ async def send_chaos():
     config = load_config()
     if not config: return 
 
-    # 1. CHECK FOR CLIFFHANGERS (Pending Diagnosis)
+    # ---------------------------------------------------------
+    # 1. THE REVEAL (Checking for Cliffhangers)
+    # ---------------------------------------------------------
     state = load_state()
     if state.get("pending_diagnosis"):
         print("🕵️‍♂️ Found a pending diagnosis. Revealing now...")
@@ -216,15 +218,17 @@ async def send_chaos():
         reveal_msg = f"🧬 <b>DIAGNOSIS REVEALED (From previous case)</b>\n\n{diagnosis_text}"
         await broadcast_message(bot, reveal_msg)
         
-        # Clear the state
+        # Clear the state but DON'T RETURN. Continue to the roll.
         state["pending_diagnosis"] = None
         save_state(state)
+        print("✅ Diagnosis revealed. Proceeding to roll...")
         
-        # Exit early so we don't spam them with a new quiz immediately
-        print("✅ Diagnosis revealed. Exiting to let them discuss.")
-        return
+        # Add a small delay so messages don't stack up instantly
+        time.sleep(3)
 
-    # 2. ROLL THE DICE
+    # ---------------------------------------------------------
+    # 2. THE ROLL
+    # ---------------------------------------------------------
     # DEBUG OVERRIDES
     if "--quiz" in sys.argv: roll = 90
     elif "--god" in sys.argv: roll = 100
@@ -248,7 +252,6 @@ async def send_chaos():
 
     # --- MULTI-QUIZ MODE (86-98) ---
     elif 86 <= roll <= 98:
-        # RELATABLE MED STUDENT / HUSTLE QUOTES
         quotes = [
             "Your coffee dependency is clinical at this point. ☕🩺",
             "Palpate the hustle. Percuss the procrastination. 🔨",
@@ -321,10 +324,10 @@ async def send_chaos():
         - <b>THE DETERIORATION:</b>
         - End with: <i>"WHAT IS YOUR DIAGNOSIS? (Discuss below 👇)"</i>
         
-        PART 2 (The Solution):
-        - <b>DIAGNOSIS:</b>
-        - <b>THE SMOKING GUN:</b>
-        - <b>PATHOPHYSIOLOGY:</b>
+        PART 2 (The Solution - The Reveal):
+        - <b>DIAGNOSIS:</b> You MUST wrap the diagnosis name in <span class="tg-spoiler">TAGS</span>.
+        - <b>THE SMOKING GUN:</b> You MUST wrap the key clue in <span class="tg-spoiler">TAGS</span>.
+        - <b>PATHOPHYSIOLOGY:</b> Brief explanation.
         """
         
         response = generate_content_safe(god_prompt)
@@ -333,7 +336,9 @@ async def send_chaos():
             parts = response.text.split("||REVEAL||")
             
             def scrub(t):
+                # 1. Strip Markdown
                 t = t.replace("## ", "").replace("### ", "").replace("**", "").replace("__", "")
+                # 2. Strip Illegal HTML (but keep spoilers/bold/italic)
                 t = t.replace("<p>", "").replace("</p>", "\n\n") 
                 t = t.replace("<ul>", "").replace("</ul>", "")
                 t = t.replace("<li>", "• ").replace("</li>", "\n") 
