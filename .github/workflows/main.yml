@@ -27,4 +27,4 @@ jobs:
           # Mapping repository secrets to the script's environment
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           GEMINI_KEYS: ${{ secrets.GEMINI_KEYS }}
-        run: python orbit.py
+        run: python orbit.py -99
