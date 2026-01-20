@@ -34,7 +34,7 @@ jobs:
           # Mapping repository secrets to the script's environment
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           GEMINI_KEYS: ${{ secrets.GEMINI_KEYS }}
-        run: python orbit.py --brain_teaser
+        run: python orbit.py --god
 
       - name: Commit and Push State
         # This step saves the "cliffhanger" diagnosis for the next run
