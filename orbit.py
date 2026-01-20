@@ -45,11 +45,9 @@ if not TELEGRAM_TOKEN or not GEMINI_API_KEYS:
     sys.exit(1)
 
 # --- 🎯 TARGET CONFIGURATION ---
-# Add as many IDs as you want here. 
-# Channel IDs usually start with -100
 TARGET_IDS = [
     "6882899041",            # Your Personal ID
-    "-1003540692903" # ⬅️ PASTE YOUR CHANNEL ID HERE (e.g. "-10012345678")
+    "-1003540692903"         # The Community Channel (Fixed with negative sign)
 ]
 
 CURRENT_KEY_INDEX = 0
@@ -169,16 +167,32 @@ async def send_safe_message(bot, chat_id, text):
 async def broadcast_message(bot, text):
     """Sends a text message to all targets in TARGET_IDS"""
     for chat_id in TARGET_IDS:
-        # Skip placeholder text if user forgot to remove it
-        if "REPLACE" in chat_id: 
-            print("⚠️ Skipping placeholder ID")
-            continue
-            
+        if "REPLACE" in chat_id: continue
         try:
             print(f"📤 Sending to {chat_id}...")
             await send_safe_message(bot, chat_id, text)
         except Exception as e:
             print(f"⚠️ Broadcast failed for {chat_id}: {e}")
+
+# --- 💾 STATE MANAGEMENT ---
+STATE_FILE = "orbit_state.json"
+
+def load_state():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(script_dir, STATE_FILE)
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_state(state):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(script_dir, STATE_FILE)
+    with open(path, 'w') as f:
+        json.dump(state, f)
 
 def load_config():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -191,12 +205,29 @@ def load_config():
 async def send_chaos():
     bot = Bot(token=TELEGRAM_TOKEN)
     config = load_config()
-    
     if not config: return 
 
+    # 1. CHECK FOR CLIFFHANGERS (Pending Diagnosis)
+    state = load_state()
+    if state.get("pending_diagnosis"):
+        print("🕵️‍♂️ Found a pending diagnosis. Revealing now...")
+        diagnosis_text = state["pending_diagnosis"]
+        
+        reveal_msg = f"🧬 <b>DIAGNOSIS REVEALED (From previous case)</b>\n\n{diagnosis_text}"
+        await broadcast_message(bot, reveal_msg)
+        
+        # Clear the state
+        state["pending_diagnosis"] = None
+        save_state(state)
+        
+        # Exit early so we don't spam them with a new quiz immediately
+        print("✅ Diagnosis revealed. Exiting to let them discuss.")
+        return
+
+    # 2. ROLL THE DICE
     # DEBUG OVERRIDES
     if "--quiz" in sys.argv: roll = 90
-    elif "--brain_teaser" in sys.argv: roll = 100
+    elif "--god" in sys.argv: roll = 100
     elif "--fact" in sys.argv: roll = 60
     else: roll = random.randint(1, 100)
     
@@ -214,44 +245,33 @@ async def send_chaos():
         if response and response.text:
             msg = f"🎱 <b>Magic-∞ Fact:</b>\n\n{response.text}"
             await broadcast_message(bot, msg)
-        else:
-            print("⚠️ No response for Fact")
 
     # --- MULTI-QUIZ MODE (86-98) ---
     elif 86 <= roll <= 98:
+        # RELATABLE MED STUDENT / HUSTLE QUOTES
         quotes = [
-            "Your stop loss is tighter than your work ethic right now. 🛑💀",
-            "Green candles wait for no one. Neither does your rent. 🕯️💸",
-            "Market's volatile. Your focus? Non-existent. 📉🥴",
-            "Stop staring at the 1-minute chart and start grinding. ⏳😤",
-            "Do it for the plot. (And the paycheck). 🎬💰",
-            "Standing on business? More like sleeping on business. 🛌📉",
-            "Delulu is not the solulu if you don't do the work. 🦄🚫",
-            "Academic comeback season starts in 3... 2... never mind, just start. 🎓🏁",
-            "Not the academic downfall arc... fix it immediately. 📉🚧",
-            "Brain rot is real, and you are patient zero. 🧟📉",
-            "Locked in? Or locked out of reality? Focus. 🔒🌍"
+            "Your coffee dependency is clinical at this point. ☕🩺",
+            "Palpate the hustle. Percuss the procrastination. 🔨",
+            "Don't be the reason the attending sighs today. 😤",
+            "Reviewing notes > Doomscrolling. 📱🚫",
+            "You didn't survive Anatomy to die in Clinicals. Lock in. 💀",
+            "Sleep is for the weak... but also for memory consolidation. Go to bed. 🛌",
+            "C's get degrees, but knowledge saves lives. 🏥",
+            "Is it imposter syndrome, or do you just need to study more? 📖👀",
+            "Treat your goals like a critical patient: Constant monitoring required. 📉",
+            "Future Dr. in the making. Act like it. 🥼"
         ]
         
         unit = random.choice(config['current_units'])
         quote = random.choice(quotes)
-        
-        # 🎲 Determine number of questions (1 to 5)
         num_q = random.randint(1, 5) 
         
-        # Broadcast Intro
         await broadcast_message(bot, f"🚨 <b>{quote}</b>\n\nIncoming Rapid Fire: <b>{num_q} Questions on {unit}</b>")
         
-        # BATCH REQUEST
         prompt = f"""
         Generate {num_q} multiple-choice questions about {unit} for a 4th Year Student.
-        
         Strict JSON format: Return a LIST of objects.
-        [
-            {{"question": "...", "options": ["A","B","C","D"], "correct_id": 0, "explanation": "..."}},
-            ...
-        ]
-        
+        [ {{"question": "...", "options": ["A","B","C","D"], "correct_id": 0, "explanation": "..."}} ]
         Limits: Question < 250 chars, Options < 100 chars.
         """.replace("{num_questions}", str(num_q))
 
@@ -261,40 +281,29 @@ async def send_chaos():
             try:
                 text = response.text.replace('```json', '').replace('```', '').strip()
                 data = json.loads(text)
-                
-                if isinstance(data, dict):
-                    data = [data]
+                if isinstance(data, dict): data = [data]
                 
                 for i, q in enumerate(data):
-                    try:
-                        # Broadcast Poll to all targets
-                        for chat_id in TARGET_IDS:
-                            if "REPLACE" in chat_id: continue
-                            
-                            try:
-                                await bot.send_poll(
-                                    chat_id=chat_id,
-                                    question=f"[{i+1}/{len(data)}] {q['question'][:290]}",
-                                    options=[o[:97] for o in q['options']],
-                                    type="quiz",
-                                    correct_option_id=q['correct_id'],
-                                    explanation=q['explanation'][:190]
-                                )
-                            except Exception as e:
-                                print(f"⚠️ Poll failed for {chat_id}: {e}")
-                                
-                        time.sleep(2) 
-                    except Exception as e:
-                        print(f"⚠️ Poll loop error {i+1}: {e}")
-                        
+                    for chat_id in TARGET_IDS:
+                        if "REPLACE" in chat_id: continue
+                        try:
+                            await bot.send_poll(
+                                chat_id=chat_id,
+                                question=f"[{i+1}/{len(data)}] {q['question'][:290]}",
+                                options=[o[:97] for o in q['options']],
+                                type="quiz",
+                                correct_option_id=q['correct_id'],
+                                explanation=q['explanation'][:190]
+                            )
+                        except Exception as e:
+                            print(f"⚠️ Poll failed for {chat_id}: {e}")
+                    time.sleep(2) 
             except Exception as e:
                 print(f"Quiz Parse Error: {e}")
-        else:
-             print("⚠️ No response for Quiz")
-             
-    # --- 👑 GOD MODE: THE DIAGNOSTIC NIGHTMARE (99-100) ---
+
+    # --- 👑 GOD MODE: THE CLIFFHANGER (99-100) ---
     else:
-        await broadcast_message(bot, "👑 <b>GOD MODE ACTIVATED: THE HOUSE M.D. PROTOCOL</b> 👑\n\n<i>Searching global medical archives for anomalies...</i>")
+        await broadcast_message(bot, "👑 <b>GOD MODE ACTIVATED: THE MYSTERY CASE</b> 👑\n\n<i>Searching global medical archives...</i>")
         
         god_prompt = """
         ACT AS: A Senior Consultant at a top-tier research hospital.
@@ -307,60 +316,49 @@ async def send_chaos():
         3. Split the response into two distinct parts separated by the text "||REVEAL||".
         
         PART 1 (The Presentation):
-        - Start with <b>PATIENT DEMOGRAPHICS:</b> (Make it weird).
-        - <b>VITALS & LABS:</b> Use <u>underline</u> tags to highlight abnormal values or key findings.
-        - <b>THE DETERIORATION:</b> (Patient gets worse).
-        - End with: <i>"WHAT IS YOUR DIAGNOSIS?"</i>
+        - Start with <b>PATIENT DEMOGRAPHICS:</b>
+        - <b>VITALS & LABS:</b> Use <u>underline</u> for abnormalities.
+        - <b>THE DETERIORATION:</b>
+        - End with: <i>"WHAT IS YOUR DIAGNOSIS? (Discuss below 👇)"</i>
         
         PART 2 (The Solution):
-        - <b>DIAGNOSIS:</b> Wrap the name of the diagnosis in <span class="tg-spoiler">TAGS</span> so it is hidden.
-        - <b>THE SMOKING GUN:</b> Wrap the key clue in <span class="tg-spoiler">TAGS</span> so it is hidden.
-        - <b>PATHOPHYSIOLOGY:</b> Explain why this happened.
-        - <b>SURVIVAL STATUS:</b> Did they make it?
-        
-        TONE: Intense, professional but baffled ("Doctors were stumped"), academic.
+        - <b>DIAGNOSIS:</b>
+        - <b>THE SMOKING GUN:</b>
+        - <b>PATHOPHYSIOLOGY:</b>
         """
         
         response = generate_content_safe(god_prompt)
         
         if response and response.text:
-            # Split the Case from the Answer
             parts = response.text.split("||REVEAL||")
             
-            # Helper to scrub markdown AND illegal HTML
             def scrub(t):
-                # 1. Strip Markdown
                 t = t.replace("## ", "").replace("### ", "").replace("**", "").replace("__", "")
-                # 2. Strip Illegal HTML for Telegram
                 t = t.replace("<p>", "").replace("</p>", "\n\n") 
                 t = t.replace("<ul>", "").replace("</ul>", "")
                 t = t.replace("<li>", "• ").replace("</li>", "\n") 
                 t = t.replace("<h1>", "<b>").replace("</h1>", "</b>\n") 
                 t = t.replace("<h2>", "<b>").replace("</h2>", "</b>\n")
-                # 3. Ensure spoilers and underlines are kept (Safety check)
-                # No action needed as replace only targets illegal tags
                 return t.strip()
 
             part1_clean = scrub(parts[0])
             
-            # Send The Case (Part 1)
+            # Send Case Only
             case_text = f"📋 <b>CASE FILE #{random.randint(1000,9999)}: THE UNEXPLAINED</b>\n\n{part1_clean}"
             await broadcast_message(bot, case_text)
             
-            # Build Suspense
-            await broadcast_message(bot, "<i>⏳ Analyzing differentials... (You have 10 seconds to guess)</i>")
-            time.sleep(10) 
-            
-            # The Prestige (Part 2)
+            # Save Diagnosis for NEXT run
             if len(parts) > 1:
                 part2_clean = scrub(parts[1])
-                reveal_text = f"🧬 <b>DIAGNOSIS REVEALED</b>\n\n{part2_clean}"
-                await broadcast_message(bot, reveal_text)
+                state["pending_diagnosis"] = part2_clean
+                save_state(state)
+                print("🔒 Diagnosis saved for next run.")
+                
+                await broadcast_message(bot, "<i>🔮 Diagnosis will be revealed in the next transmission... discussing is advised.</i>")
             else:
-                await broadcast_message(bot, "⚠️ <b>Data Corruption:</b> AI forgot the spoiler tag. Diagnosis is in the text above.")
+                await broadcast_message(bot, "⚠️ <b>Error:</b> AI failed to generate a diagnosis.")
         else:
-            await broadcast_message(bot, "⚠️ <b>System Failure:</b> The case files are encrypted. (API Error).")
+            await broadcast_message(bot, "⚠️ <b>System Failure:</b> API Error.")
 
 if __name__ == "__main__":
     asyncio.run(send_chaos())
-
