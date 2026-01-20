@@ -3,15 +3,22 @@ name: Orbit Chaos Engine
 on:
   schedule:
     # Runs every 30 minutes (e.g., 10:00, 10:30, 11:00...)
-    - cron: '0 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
   chaos-roll:
     runs-on: ubuntu-latest
+    permissions:
+      # Give the bot permission to write back to the repo
+      contents: write
+      
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          # We need the token to push changes back
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -28,3 +35,12 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           GEMINI_KEYS: ${{ secrets.GEMINI_KEYS }}
         run: python orbit.py --brain_teaser
+
+      - name: Commit and Push State
+        # This step saves the "cliffhanger" diagnosis for the next run
+        run: |
+          git config --global user.name 'Orbit Bot'
+          git config --global user.email 'orbit-bot@users.noreply.github.com'
+          git add orbit_state.json
+          # Only commit if there are changes (avoids errors if no diagnosis was saved)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Orbit State [skip ci]" && git push)
