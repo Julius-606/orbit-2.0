@@ -44,7 +44,14 @@ if not TELEGRAM_TOKEN or not GEMINI_API_KEYS:
     print("❌ FATAL ERROR: Secrets not found.")
     sys.exit(1)
 
-CHAT_ID = "6882899041" 
+# --- 🎯 TARGET CONFIGURATION ---
+# Add as many IDs as you want here. 
+# Channel IDs usually start with -100
+TARGET_IDS = [
+    "6882899041",            # Your Personal ID
+    "1003540692903" # ⬅️ PASTE YOUR CHANNEL ID HERE (e.g. "-10012345678")
+]
+
 CURRENT_KEY_INDEX = 0
 
 # --- CONFIGURATION & ROTATION ---
@@ -158,6 +165,21 @@ async def send_safe_message(bot, chat_id, text):
         if current_chunk:
             await send_chunk(current_chunk)
 
+# 📡 BROADCAST HELPER
+async def broadcast_message(bot, text):
+    """Sends a text message to all targets in TARGET_IDS"""
+    for chat_id in TARGET_IDS:
+        # Skip placeholder text if user forgot to remove it
+        if "REPLACE" in chat_id: 
+            print("⚠️ Skipping placeholder ID")
+            continue
+            
+        try:
+            print(f"📤 Sending to {chat_id}...")
+            await send_safe_message(bot, chat_id, text)
+        except Exception as e:
+            print(f"⚠️ Broadcast failed for {chat_id}: {e}")
+
 def load_config():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, 'config.json')
@@ -191,7 +213,7 @@ async def send_chaos():
         response = generate_content_safe(prompt)
         if response and response.text:
             msg = f"🎱 <b>Magic-∞ Fact:</b>\n\n{response.text}"
-            await send_safe_message(bot, CHAT_ID, msg)
+            await broadcast_message(bot, msg)
         else:
             print("⚠️ No response for Fact")
 
@@ -217,7 +239,8 @@ async def send_chaos():
         # 🎲 Determine number of questions (1 to 5)
         num_q = random.randint(1, 5) 
         
-        await send_safe_message(bot, CHAT_ID, f"🚨 <b>{quote}</b>\n\nIncoming Rapid Fire: <b>{num_q} Questions on {unit}</b>")
+        # Broadcast Intro
+        await broadcast_message(bot, f"🚨 <b>{quote}</b>\n\nIncoming Rapid Fire: <b>{num_q} Questions on {unit}</b>")
         
         # BATCH REQUEST
         prompt = f"""
@@ -244,17 +267,25 @@ async def send_chaos():
                 
                 for i, q in enumerate(data):
                     try:
-                        await bot.send_poll(
-                            chat_id=CHAT_ID,
-                            question=f"[{i+1}/{len(data)}] {q['question'][:290]}",
-                            options=[o[:97] for o in q['options']],
-                            type="quiz",
-                            correct_option_id=q['correct_id'],
-                            explanation=q['explanation'][:190]
-                        )
+                        # Broadcast Poll to all targets
+                        for chat_id in TARGET_IDS:
+                            if "REPLACE" in chat_id: continue
+                            
+                            try:
+                                await bot.send_poll(
+                                    chat_id=chat_id,
+                                    question=f"[{i+1}/{len(data)}] {q['question'][:290]}",
+                                    options=[o[:97] for o in q['options']],
+                                    type="quiz",
+                                    correct_option_id=q['correct_id'],
+                                    explanation=q['explanation'][:190]
+                                )
+                            except Exception as e:
+                                print(f"⚠️ Poll failed for {chat_id}: {e}")
+                                
                         time.sleep(2) 
                     except Exception as e:
-                        print(f"⚠️ Poll {i+1} failed: {e}")
+                        print(f"⚠️ Poll loop error {i+1}: {e}")
                         
             except Exception as e:
                 print(f"Quiz Parse Error: {e}")
@@ -263,7 +294,7 @@ async def send_chaos():
              
     # --- 👑 GOD MODE: THE DIAGNOSTIC NIGHTMARE (99-100) ---
     else:
-        await send_safe_message(bot, CHAT_ID, "👑 <b>GOD MODE ACTIVATED: THE HOUSE M.D. PROTOCOL</b> 👑\n\n<i>Searching global medical archives for anomalies...</i>")
+        await broadcast_message(bot, "👑 <b>GOD MODE ACTIVATED: THE HOUSE M.D. PROTOCOL</b> 👑\n\n<i>Searching global medical archives for anomalies...</i>")
         
         god_prompt = """
         ACT AS: A Senior Consultant at a top-tier research hospital.
@@ -314,21 +345,21 @@ async def send_chaos():
             
             # Send The Case (Part 1)
             case_text = f"📋 <b>CASE FILE #{random.randint(1000,9999)}: THE UNEXPLAINED</b>\n\n{part1_clean}"
-            await send_safe_message(bot, CHAT_ID, case_text)
+            await broadcast_message(bot, case_text)
             
             # Build Suspense
-            await send_safe_message(bot, CHAT_ID, "<i>⏳ Analyzing differentials... (You have 10 seconds to guess)</i>")
+            await broadcast_message(bot, "<i>⏳ Analyzing differentials... (You have 10 seconds to guess)</i>")
             time.sleep(10) 
             
             # The Prestige (Part 2)
             if len(parts) > 1:
                 part2_clean = scrub(parts[1])
                 reveal_text = f"🧬 <b>DIAGNOSIS REVEALED</b>\n\n{part2_clean}"
-                await send_safe_message(bot, CHAT_ID, reveal_text)
+                await broadcast_message(bot, reveal_text)
             else:
-                await send_safe_message(bot, CHAT_ID, "⚠️ <b>Data Corruption:</b> AI forgot the spoiler tag. Diagnosis is in the text above.")
+                await broadcast_message(bot, "⚠️ <b>Data Corruption:</b> AI forgot the spoiler tag. Diagnosis is in the text above.")
         else:
-            await send_safe_message(bot, CHAT_ID, "⚠️ <b>System Failure:</b> The case files are encrypted. (API Error).")
+            await broadcast_message(bot, "⚠️ <b>System Failure:</b> The case files are encrypted. (API Error).")
 
 if __name__ == "__main__":
     asyncio.run(send_chaos())
