@@ -49,7 +49,7 @@ if not TELEGRAM_TOKEN or not GEMINI_API_KEYS:
 # Channel IDs usually start with -100
 TARGET_IDS = [
     "6882899041",            # Your Personal ID
-    "1003540692903" # ⬅️ PASTE YOUR CHANNEL ID HERE (e.g. "-10012345678")
+    "-1003540692903" # ⬅️ PASTE YOUR CHANNEL ID HERE (e.g. "-10012345678")
 ]
 
 CURRENT_KEY_INDEX = 0
@@ -363,3 +363,4 @@ async def send_chaos():
 
 if __name__ == "__main__":
     asyncio.run(send_chaos())
+
