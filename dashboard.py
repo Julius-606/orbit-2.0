@@ -19,7 +19,8 @@ except ImportError:
     Github = None # Soft fail if user hasn't installed it
 
 # --- ⚙️ SETTINGS ---
-MAX_ARCHIVED_SESSIONS = 20 # 🆕 Increased Limit
+MAX_ARCHIVED_SESSIONS = 20 # Keep main config light
+MAX_VAULT_SESSIONS = 100   # Deep storage capacity
 
 # --- 🔐 SECURE KEYCHAIN ---
 GEMINI_API_KEYS = []
@@ -188,7 +189,6 @@ def load_config():
     try:
         with open(config_path, 'r') as f: return json.load(f)
     except FileNotFoundError:
-        # --- 🆕 LOCAL DEV CHANGE: Return Default Config if nothing found ---
         return {
             "user_name": "Future Doc",
             "difficulty": "Medium (Standard)",
@@ -222,8 +222,72 @@ def save_config(new_config):
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, 'config.json')
         with open(config_path, 'w') as f: json.dump(new_config, f, indent=4)
-        # st.toast("Local Save Only", icon="💾")
         return True
+
+# --- 🏦 VAULT (DEEP STORAGE) MANAGEMENT ---
+def load_vault():
+    """Loads the heavy archive_vault.json from cloud or local."""
+    g, repo = get_github_session()
+    if repo:
+        try:
+            contents = repo.get_contents("archive_vault.json")
+            decoded = contents.decoded_content.decode()
+            return json.loads(decoded), contents.sha # Return SHA for updates
+        except Exception:
+            # File might not exist yet, that's chill
+            return [], None
+    
+    # Local fallback
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    vault_path = os.path.join(script_dir, 'archive_vault.json')
+    try:
+        with open(vault_path, 'r') as f: return json.load(f), None
+    except FileNotFoundError:
+        return [], None
+
+def save_vault(vault_data, sha=None):
+    """Saves the heavy vault data."""
+    g, repo = get_github_session()
+    if repo:
+        try:
+            # If SHA exists, update. If not, create.
+            if sha:
+                contents = repo.get_contents("archive_vault.json") # Re-fetch to be safe
+                repo.update_file(
+                    path="archive_vault.json",
+                    message="🧊 Deep Freeze Archive Update",
+                    content=json.dumps(vault_data, indent=4),
+                    sha=contents.sha
+                )
+            else:
+                repo.create_file(
+                    path="archive_vault.json",
+                    message="🧊 Init Deep Freeze",
+                    content=json.dumps(vault_data, indent=4)
+                )
+            return True
+        except Exception as e:
+            st.error(f"❌ Vault Save Failed: {e}")
+            return False
+    else:
+        # Local
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        vault_path = os.path.join(script_dir, 'archive_vault.json')
+        with open(vault_path, 'w') as f: json.dump(vault_data, f, indent=4)
+        return True
+
+def push_to_vault(old_session):
+    """Moves a session from RAM to Deep Storage."""
+    vault, sha = load_vault()
+    
+    # Insert as the 'newest' of the old stuff (index 0)
+    vault.insert(0, old_session)
+    
+    # Cap at MAX_VAULT_SESSIONS (100)
+    if len(vault) > MAX_VAULT_SESSIONS:
+        vault = vault[:MAX_VAULT_SESSIONS]
+        
+    save_vault(vault, sha)
 
 st.title("🩺 Orbit: Your Personal Academic Weapon")
 
@@ -235,18 +299,13 @@ config = st.session_state.config
 
 # --- 🎨 UI THEME & BACKGROUND ---
 def set_ui_theme(current_config):
-    # Check Low Data Mode First
     low_data = current_config.get('low_data_mode', False)
-    
-    # 2. Chaos Accents (Random Neon Colors) - We keep these even in low data, CSS is cheap
     accents = ["#00f2ff", "#ff0055", "#00ff9d", "#bd00ff", "#ffae00"]
 
     if low_data:
-        # 🛑 LOW DATA MODE: No Images, just dark vibes
         bg_css = "background-color: #0e1117;"
-        accent_color = random.choice(accents) # Still keep it fresh
+        accent_color = random.choice(accents)
     else:
-        # 🚀 HIGH RES MODE: Full experience
         base_urls = [
             "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d", # Tech Blue
             "https://images.unsplash.com/photo-1532187863486-abf9dbad1b69", # Lab Fluids
@@ -281,7 +340,6 @@ def set_ui_theme(current_config):
         ]
         backgrounds = [f"{url}?auto=format&fit=crop&w=1920&q=80" for url in base_urls]
         
-        # Theme Rotation Logic
         current_time = time.time()
         if "theme_cache" not in st.session_state:
             st.session_state.theme_cache = {
@@ -300,8 +358,6 @@ def set_ui_theme(current_config):
         bg_url = st.session_state.theme_cache["bg_url"]
         accent_color = st.session_state.theme_cache["accent"]
         
-        # --- 🔧 UI FIX: LIGHTER OVERLAY ---
-        # Changed opacity from 0.75/0.85 to 0.5/0.7 for better visibility on mobile
         bg_css = f"""
             background-color: #0e1117;
             background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url("{bg_url}");
@@ -310,69 +366,23 @@ def set_ui_theme(current_config):
             background-attachment: fixed;
         """
 
-    # 3. Inject CSS
     st.markdown(
         f"""
         <style>
-        /* Import Orbitron Font */
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400&display=swap');
-
-        /* Main Background */
-        .stApp {{
-            {bg_css}
-            font-family: 'Roboto', sans-serif;
-        }}
-        
-        /* Glassmorphism Sidebar */
-        [data-testid="stSidebar"] {{
-            background-color: rgba(0, 0, 0, 0.6) !important;
-            backdrop-filter: blur(12px);
-            border-right: 1px solid rgba(255, 255, 255, 0.1);
-        }}
-        
-        /* Headers - The "Orbit" Aesthetic */
-        h1, h2, h3 {{
-            font-family: 'Orbitron', sans-serif !important;
-            color: {accent_color} !important;
-            text-shadow: 0 0 10px rgba(0,0,0,0.5);
-            letter-spacing: 1.5px;
-        }}
-        
-        /* Button Glow Up */
-        div.stButton > button {{
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border: 1px solid {accent_color};
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(5px);
-        }}
-        div.stButton > button:hover {{
-            background: {accent_color};
-            color: black;
-            box-shadow: 0 0 20px {accent_color};
-            transform: translateY(-2px);
-            font-weight: bold;
-        }}
-        
-        /* Transparent Header */
-        header[data-testid="stHeader"] {{
-            background-color: transparent !important;
-        }}
-        
-        /* Chat Input Glass */
-        .stChatInputContainer {{
-            background-color: rgba(0, 0, 0, 0.6) !important;
-            backdrop-filter: blur(10px);
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }}
+        .stApp {{ {bg_css} font-family: 'Roboto', sans-serif; }}
+        [data-testid="stSidebar"] {{ background-color: rgba(0, 0, 0, 0.6) !important; backdrop-filter: blur(12px); border-right: 1px solid rgba(255, 255, 255, 0.1); }}
+        h1, h2, h3 {{ font-family: 'Orbitron', sans-serif !important; color: {accent_color} !important; text-shadow: 0 0 10px rgba(0,0,0,0.5); letter-spacing: 1.5px; }}
+        div.stButton > button {{ background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid {accent_color}; border-radius: 8px; transition: all 0.3s ease; backdrop-filter: blur(5px); }}
+        div.stButton > button:hover {{ background: {accent_color}; color: black; box-shadow: 0 0 20px {accent_color}; transform: translateY(-2px); font-weight: bold; }}
+        header[data-testid="stHeader"] {{ background-color: transparent !important; }}
+        .stChatInputContainer {{ background-color: rgba(0, 0, 0, 0.6) !important; backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,0.1); }}
         </style>
         """,
         unsafe_allow_html=True
     )
 
 if config:
-    # Moved Theme Setting here to pass 'config'
     set_ui_theme(config)
 
     with st.sidebar:
@@ -413,8 +423,17 @@ if config:
                         "messages": current_msgs
                     }
                     
+                    # 1. Add to local recent history
                     config['archived_sessions'].insert(0, session_archive)
-                    config['archived_sessions'] = config['archived_sessions'][:MAX_ARCHIVED_SESSIONS]
+                    
+                    # 2. OVERFLOW LOGIC: Yeet old sessions to the Vault
+                    while len(config['archived_sessions']) > MAX_ARCHIVED_SESSIONS:
+                        # Pop the oldest session from recent history (last item)
+                        overflow_session = config['archived_sessions'].pop()
+                        with st.spinner("📦 Migrating old chats to Deep Storage..."):
+                            push_to_vault(overflow_session)
+                        st.toast("Oldest chat moved to Vault 🏦", icon="🧊")
+                    
                     config['active_session'] = []
                     
                     save_config(config)
@@ -434,7 +453,6 @@ if config:
             
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
-                    # 🆕 PERSONA LOGIC
                     p_map = {
                         "Standard Orbit": "You are Orbit, a helpful and precise academic assistant.",
                         "Socratic Tutor": "You are a Socratic tutor. Never give the answer directly. Ask guiding questions to lead the user to the answer.",
@@ -446,262 +464,4 @@ if config:
 
                     ctx = f"""
                     {persona_prompt}
-                    User studies: {', '.join(config.get('current_units', []))}. 
-                    Difficulty: {config.get('difficulty', 'Medium')}.
-                    Current Session Context: {st.session_state.messages[-6:]}
-                    Current Question: {prompt}
-                    """
-                    response_obj = ask_orbit(ctx)
-                    
-                    if response_obj and response_obj.text:
-                        st.markdown(response_obj.text)
-                        st.session_state.messages.append({"role": "assistant", "content": response_obj.text})
-                        
-                        config['active_session'] = st.session_state.messages
-                        save_config(config)
-                        st.session_state.config = config
-                    else:
-                        st.error("⚠️ Connection Interrupted.")
-
-    # --- TAB 2: ARCHIVED SESSIONS (UPDATED) ---
-    with tab2:
-        st.subheader("🗂️ Session Archives")
-        st.caption(f"Storing last {MAX_ARCHIVED_SESSIONS} completed sessions.")
-        
-        archives = config.get('archived_sessions', [])
-        
-        if not archives:
-            st.info("No archives found. Finish a chat and hit 'New Chat' to file it here.")
-        else:
-            # 🆕 UPDATED LIST LOGIC WITH DELETE BUTTON
-            for i, session in enumerate(archives):
-                # We use columns: Left (Details) | Right (Delete Button)
-                c_view, c_del = st.columns([6, 1])
-                
-                with c_view:
-                    label = f"📅 {session['timestamp']} | 📝 {session['summary']}"
-                    with st.expander(label, expanded=False):
-                        for msg in session['messages']:
-                            role_icon = "👤" if msg['role'] == "user" else "🩺"
-                            st.markdown(f"**{role_icon} {msg['role'].title()}:** {msg['content']}")
-                            st.divider()
-                
-                with c_del:
-                    # Unique key needed for button inside loop
-                    if st.button("🗑️", key=f"del_sess_{i}", help="Delete this session"):
-                        config['archived_sessions'].pop(i)
-                        save_config(config)
-                        st.rerun()
-
-    # --- TAB 3: CHAOS QUIZ GENERATOR ---
-    with tab3:
-        st.subheader("📝 Generated Quiz")
-        st.caption("Generates a random number of questions (1-10) for a random unit.")
-        
-        col_q1, col_q2 = st.columns([1, 3])
-        with col_q1:
-            if st.button("🎲 Roll for Quiz", use_container_width=True):
-                if not config.get('current_units'):
-                    st.error("No units loaded!")
-                else:
-                    with st.spinner("Generating Chaos..."):
-                        target_unit = random.choice(config['current_units'])
-                        num_questions = random.randint(1, 10)
-                        
-                        q_prompt = f"""
-                        Generate {num_questions} multiple-choice questions about {target_unit} for a 4th Year Student.
-                        Difficulty: {config['difficulty']}.
-                        Return ONLY a raw JSON list of objects. No markdown.
-                        Format: [{{"q": "...", "o": ["A", "B"], "a": "A", "e": "..."}}]
-                        """
-                        response = ask_orbit(q_prompt)
-                        
-                        if response and response.text:
-                            try:
-                                clean_text = response.text.replace("```json", "").replace("```", "").strip()
-                                quiz_data = json.loads(clean_text)
-                                st.session_state['quiz_data'] = quiz_data
-                                st.session_state['quiz_unit'] = target_unit
-                                st.session_state['quiz_answers'] = {} 
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to parse quiz: {e}")
-                        else:
-                            st.error("AI returned silence.")
-
-        with col_q2:
-            if 'quiz_data' in st.session_state:
-                st.info(f"**Unit:** {st.session_state['quiz_unit']} | **Questions:** {len(st.session_state['quiz_data'])}")
-                with st.form("quiz_form"):
-                    for i, q in enumerate(st.session_state['quiz_data']):
-                        st.markdown(f"**{i+1}. {q['q']}**")
-                        st.session_state['quiz_answers'][i] = st.radio(
-                            "Select answer:", q['o'], key=f"q_{i}", index=None, label_visibility="collapsed"
-                        )
-                        st.divider()
-                    
-                    if st.form_submit_button("Submit Quiz"):
-                        score = 0
-                        total = len(st.session_state['quiz_data'])
-                        for i, q in enumerate(st.session_state['quiz_data']):
-                            user_ans = st.session_state['quiz_answers'].get(i)
-                            if user_ans == q['a']:
-                                score += 1
-                                st.success(f"Q{i+1}: Correct! ✅")
-                            else:
-                                st.error(f"Q{i+1}: Wrong. Correct: {q['a']}")
-                                st.caption(f"ℹ️ {q['e']}")
-                        
-                        # --- 🆕 PnL RECORDING LOGIC ---
-                        if 'quiz_history' not in config: config['quiz_history'] = []
-                        pnl = (score / total) * 100
-                        
-                        config['quiz_history'].append({
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "unit": st.session_state['quiz_unit'],
-                            "score": score,
-                            "total": total,
-                            "pnl": pnl
-                        })
-                        save_config(config)
-                        st.session_state.config = config
-                        
-                        st.metric("Final Score", f"{score}/{total} ({pnl:.0f}%)")
-                        if score == total: st.balloons()
-            else:
-                st.write("No active quiz. Hit the Roll button.")
-
-    # --- TAB 4: STUDY PROGRESS (RENAMED) ---
-    with tab4:
-        st.subheader("📈 Academic Progress")
-        history = config.get('quiz_history', [])
-        
-        if not history:
-            st.info("📉 No quiz data found. Go take some quizzes to build your history.")
-        else:
-            df = pd.DataFrame(history)
-            
-            # Key Metrics
-            avg_score = df['pnl'].mean()
-            total_quizzes = len(df)
-            best_score = df['pnl'].max()
-            
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Average Score", f"{avg_score:.1f}%")
-            m2.metric("Quiz Count", total_quizzes)
-            m3.metric("Highest Score", f"{best_score:.1f}%")
-            
-            # Chart
-            st.caption("Score History")
-            st.line_chart(df[['pnl']]) 
-            
-            # Strength/Weakness Analysis
-            st.divider()
-            c1, c2 = st.columns(2)
-            
-            # Group by Unit for Analysis
-            if not df.empty and 'unit' in df.columns:
-                unit_perf = df.groupby('unit')['pnl'].mean().sort_values(ascending=False)
-                
-                with c1:
-                    st.success("💎 Strongest Units")
-                    for unit, score in unit_perf.head(3).items():
-                        st.write(f"**{unit}**: {score:.1f}%")
-                
-                with c2:
-                    st.error("🧱 Needs Improvement")
-                    for unit, score in unit_perf.tail(3).sort_values().items():
-                        st.write(f"**{unit}**: {score:.1f}%")
-
-    with tab5:
-        col1, col2 = st.columns(2)
-        with col1:
-            inv = config.get('unit_inventory', {})
-            years = list(inv.keys())
-            if years:
-                y = st.selectbox("Year", years)
-                if isinstance(inv[y], dict):
-                    sems = list(inv[y].keys())
-                    s = st.selectbox("Semester", sems)
-                    avail = inv[y][s]
-                else:
-                    avail = inv[y]
-                    s = "General"
-                adds = st.multiselect(f"Add from {y}-{s}", avail)
-                if st.button("➕ Add"):
-                    changed = False
-                    for u in adds:
-                        if u not in config.get('current_units', []):
-                            if 'current_units' not in config: config['current_units'] = []
-                            config['current_units'].append(u)
-                            changed = True
-                    if changed:
-                        if save_config(config):
-                            st.session_state.config = config
-                            st.rerun()
-            else:
-                st.info("No units found in inventory.")
-        with col2:
-            for unit in config.get('current_units', []):
-                if st.checkbox(f"Drop {unit}", key=unit):
-                    config['current_units'].remove(unit)
-                    if save_config(config):
-                        st.session_state.config = config
-                        st.rerun()
-
-    # --- TAB 6: SETTINGS (REMASTERED) ---
-    with tab6:
-        st.subheader("⚙️ System Configuration")
-        
-        c1, c2 = st.columns(2)
-        
-        with c1:
-            st.markdown("### 🧠 AI Personality")
-            personas = ["Standard Orbit", "Socratic Tutor", "Dr. House", "ELI5"]
-            curr_p = config.get('ai_persona', "Standard Orbit")
-            # Handle case where config value isn't in list (legacy support)
-            idx_p = personas.index(curr_p) if curr_p in personas else 0
-            new_p = st.selectbox("Select Interaction Model", personas, index=idx_p)
-            if new_p != curr_p:
-                config['ai_persona'] = new_p
-                save_config(config)
-                st.toast("Personality Matrix Updated")
-        
-        with c2:
-            st.markdown("### 🎨 Visuals")
-            
-            # LOCK BG TOGGLE
-            lock_bg = st.toggle("Lock Current Background", value=config.get('lock_background', False))
-            if lock_bg != config.get('lock_background', False):
-                config['lock_background'] = lock_bg
-                save_config(config)
-                st.rerun()
-                
-            # LOW DATA TOGGLE
-            low_data = st.toggle("Low Data Mode (Save Bandwidth)", value=config.get('low_data_mode', False))
-            if low_data != config.get('low_data_mode', False):
-                config['low_data_mode'] = low_data
-                save_config(config)
-                st.rerun()
-
-        st.divider()
-        
-        st.markdown("### 🧬 User Context")
-        curr = st.text_area("Research Interests / Focus Areas", ", ".join(config.get('interests', [])))
-        if st.button("Update Interests"):
-            config['interests'] = [x.strip() for x in curr.split(",")]
-            save_config(config)
-            st.success("Profile Updated!")
-            
-        st.divider()
-        
-        with st.expander("⚠️ Danger Zone (Reset Data)", expanded=False):
-            if st.button("🔥 Clear Quiz History (Reset Progress)"):
-                config['quiz_history'] = []
-                save_config(config)
-                st.rerun()
-                
-            if st.button("🗑️ Clear Archived Sessions"):
-                config['archived_sessions'] = []
-                save_config(config)
-                st.rerun()
+   
