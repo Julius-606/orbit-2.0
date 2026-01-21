@@ -462,4 +462,303 @@ if config:
                     selected_p = config.get('ai_persona', "Standard Orbit")
                     persona_prompt = p_map.get(selected_p, p_map["Standard Orbit"])
 
-                    # 🔧 FIX: Extracting variables to prevent f-string 
+                    # 🔧 FIX: Extracting variables to prevent f-string SyntaxError
+                    # Python sometimes hiccups when you put complex logic inside f-string braces.
+                    # We're simplifying the leverage here.
+                    active_units = ", ".join(config.get('current_units', []))
+                    curr_diff = config.get('difficulty', 'Medium')
+                    recent_context = st.session_state.messages[-6:]
+
+                    ctx = f"""
+                    {persona_prompt}
+                    User studies: {active_units}. 
+                    Difficulty: {curr_diff}.
+                    Current Session Context: {recent_context}
+                    Current Question: {prompt}
+                    """
+                    response_obj = ask_orbit(ctx)
+                    
+                    if response_obj and response_obj.text:
+                        st.markdown(response_obj.text)
+                        st.session_state.messages.append({"role": "assistant", "content": response_obj.text})
+                        
+                        config['active_session'] = st.session_state.messages
+                        save_config(config)
+                        st.session_state.config = config
+                    else:
+                        st.error("⚠️ Connection Interrupted.")
+
+    # --- TAB 2: ARCHIVED SESSIONS (UPDATED) ---
+    with tab2:
+        st.subheader("🗂️ Recent History (RAM)")
+        st.caption(f"Storing last {MAX_ARCHIVED_SESSIONS} sessions for quick access.")
+        
+        archives = config.get('archived_sessions', [])
+        
+        if not archives:
+            st.info("No archives found. Start chatting to build history.")
+        else:
+            for i, session in enumerate(archives):
+                c_view, c_del = st.columns([6, 1])
+                with c_view:
+                    label = f"📅 {session['timestamp']} | 📝 {session['summary']}"
+                    with st.expander(label, expanded=False):
+                        for msg in session['messages']:
+                            role_icon = "👤" if msg['role'] == "user" else "🩺"
+                            st.markdown(f"**{role_icon} {msg['role'].title()}:** {msg['content']}")
+                            st.divider()
+                with c_del:
+                    if st.button("🗑️", key=f"del_sess_{i}", help="Delete this session"):
+                        config['archived_sessions'].pop(i)
+                        save_config(config)
+                        st.rerun()
+
+        st.divider()
+        
+        # --- 🧊 DEEP STORAGE VAULT ---
+        st.markdown("### 🧊 Deep Archive (Vault)")
+        if "show_vault" not in st.session_state: st.session_state.show_vault = False
+
+        if st.button("📂 Open Vault (Up to 100 Chats)", use_container_width=True):
+            st.session_state.show_vault = not st.session_state.show_vault
+
+        if st.session_state.show_vault:
+            with st.spinner("🔓 Cracking the vault..."):
+                vault_data, vault_sha = load_vault()
+            
+            if not vault_data:
+                st.info("The Vault is empty. It's quiet... too quiet.")
+            else:
+                st.caption(f"Vault Capacity: {len(vault_data)}/{MAX_VAULT_SESSIONS}")
+                for i, session in enumerate(vault_data):
+                    c_v_view, c_v_del = st.columns([6, 1])
+                    with c_v_view:
+                        # Slightly different icon for vault items
+                        label = f"🧊 {session['timestamp']} | 📝 {session['summary']}"
+                        with st.expander(label, expanded=False):
+                            for msg in session['messages']:
+                                role_icon = "👤" if msg['role'] == "user" else "🩺"
+                                st.markdown(f"**{role_icon} {msg['role'].title()}:** {msg['content']}")
+                                st.divider()
+                    with c_v_del:
+                        # Vault delete logic
+                        if st.button("🗑️", key=f"del_vault_{i}", help="Delete from Vault permanently"):
+                            vault_data.pop(i)
+                            save_vault(vault_data, vault_sha)
+                            st.rerun()
+
+    # --- TAB 3: CHAOS QUIZ GENERATOR (UPDATED) ---
+    with tab3:
+        st.subheader("📝 Generated Quiz")
+        st.caption("Customize your chaos. Pick a target or let fate decide.")
+        
+        col_q1, col_q2 = st.columns([1, 3])
+        with col_q1:
+            unit_options = ["🎲 Random Fate"] + config.get('current_units', [])
+            selected_unit_opt = st.selectbox("Target Unit", unit_options)
+            
+            focus_area = st.text_input("Focus Area (Optional)", placeholder="e.g. Anatomy, derivatives...")
+
+            if st.button("🚀 Launch Quiz", use_container_width=True):
+                if not config.get('current_units'):
+                    st.error("No units loaded!")
+                else:
+                    with st.spinner("Brewing High-Octane Quiz..."):
+                        if selected_unit_opt == "🎲 Random Fate":
+                            target_unit = random.choice(config['current_units'])
+                        else:
+                            target_unit = selected_unit_opt
+                        
+                        focus_text = f" focusing specifically on '{focus_area}'" if focus_area else ""
+
+                        num_questions = random.randint(1, 10)
+                        
+                        q_prompt = f"""
+                        Generate {num_questions} multiple-choice questions about {target_unit}{focus_text} for a 4th Year Student.
+                        Difficulty: {config['difficulty']}.
+                        Return ONLY a raw JSON list of objects. No markdown.
+                        Format: [{{"q": "...", "o": ["A", "B"], "a": "A", "e": "..."}}]
+                        """
+                        response = ask_orbit(q_prompt)
+                        
+                        if response and response.text:
+                            try:
+                                clean_text = response.text.replace("```json", "").replace("```", "").strip()
+                                quiz_data = json.loads(clean_text)
+                                st.session_state['quiz_data'] = quiz_data
+                                st.session_state['quiz_unit'] = target_unit
+                                st.session_state['quiz_answers'] = {} 
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to parse quiz: {e}")
+                        else:
+                            st.error("AI returned silence.")
+
+        with col_q2:
+            if 'quiz_data' in st.session_state:
+                st.info(f"**Unit:** {st.session_state['quiz_unit']} | **Questions:** {len(st.session_state['quiz_data'])}")
+                with st.form("quiz_form"):
+                    for i, q in enumerate(st.session_state['quiz_data']):
+                        st.markdown(f"**{i+1}. {q['q']}**")
+                        st.session_state['quiz_answers'][i] = st.radio(
+                            "Select answer:", q['o'], key=f"q_{i}", index=None, label_visibility="collapsed"
+                        )
+                        st.divider()
+                    
+                    if st.form_submit_button("Submit Quiz"):
+                        score = 0
+                        total = len(st.session_state['quiz_data'])
+                        for i, q in enumerate(st.session_state['quiz_data']):
+                            user_ans = st.session_state['quiz_answers'].get(i)
+                            if user_ans == q['a']:
+                                score += 1
+                                st.success(f"Q{i+1}: Correct! ✅")
+                            else:
+                                st.error(f"Q{i+1}: Wrong. Correct: {q['a']}")
+                                st.caption(f"ℹ️ {q['e']}")
+                        
+                        if 'quiz_history' not in config: config['quiz_history'] = []
+                        pnl = (score / total) * 100
+                        
+                        config['quiz_history'].append({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "unit": st.session_state['quiz_unit'],
+                            "score": score,
+                            "total": total,
+                            "pnl": pnl
+                        })
+                        save_config(config)
+                        st.session_state.config = config
+                        
+                        st.metric("Final Score", f"{score}/{total} ({pnl:.0f}%)")
+                        if score == total: st.balloons()
+            else:
+                st.write("No active quiz. Hit the Launch button.")
+
+    # --- TAB 4: STUDY PROGRESS ---
+    with tab4:
+        st.subheader("📈 Academic Progress")
+        history = config.get('quiz_history', [])
+        
+        if not history:
+            st.info("📉 No quiz data found. Go take some quizzes to build your history.")
+        else:
+            df = pd.DataFrame(history)
+            
+            avg_score = df['pnl'].mean()
+            total_quizzes = len(df)
+            best_score = df['pnl'].max()
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Average Score", f"{avg_score:.1f}%")
+            m2.metric("Quiz Count", total_quizzes)
+            m3.metric("Highest Score", f"{best_score:.1f}%")
+            
+            st.caption("Score History")
+            st.line_chart(df[['pnl']]) 
+            
+            st.divider()
+            c1, c2 = st.columns(2)
+            
+            if not df.empty and 'unit' in df.columns:
+                unit_perf = df.groupby('unit')['pnl'].mean().sort_values(ascending=False)
+                
+                with c1:
+                    st.success("💎 Strongest Units")
+                    for unit, score in unit_perf.head(3).items():
+                        st.write(f"**{unit}**: {score:.1f}%")
+                
+                with c2:
+                    st.error("🧱 Needs Improvement")
+                    for unit, score in unit_perf.tail(3).sort_values().items():
+                        st.write(f"**{unit}**: {score:.1f}%")
+
+    with tab5:
+        col1, col2 = st.columns(2)
+        with col1:
+            inv = config.get('unit_inventory', {})
+            years = list(inv.keys())
+            if years:
+                y = st.selectbox("Year", years)
+                if isinstance(inv[y], dict):
+                    sems = list(inv[y].keys())
+                    s = st.selectbox("Semester", sems)
+                    avail = inv[y][s]
+                else:
+                    avail = inv[y]
+                    s = "General"
+                adds = st.multiselect(f"Add from {y}-{s}", avail)
+                if st.button("➕ Add"):
+                    changed = False
+                    for u in adds:
+                        if u not in config.get('current_units', []):
+                            if 'current_units' not in config: config['current_units'] = []
+                            config['current_units'].append(u)
+                            changed = True
+                    if changed:
+                        if save_config(config):
+                            st.session_state.config = config
+                            st.rerun()
+            else:
+                st.info("No units found in inventory.")
+        with col2:
+            for unit in config.get('current_units', []):
+                if st.checkbox(f"Drop {unit}", key=unit):
+                    config['current_units'].remove(unit)
+                    if save_config(config):
+                        st.session_state.config = config
+                        st.rerun()
+
+    # --- TAB 6: SETTINGS ---
+    with tab6:
+        st.subheader("⚙️ System Configuration")
+        
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            st.markdown("### 🧠 AI Personality")
+            personas = ["Standard Orbit", "Socratic Tutor", "Dr. House", "ELI5"]
+            curr_p = config.get('ai_persona', "Standard Orbit")
+            idx_p = personas.index(curr_p) if curr_p in personas else 0
+            new_p = st.selectbox("Select Interaction Model", personas, index=idx_p)
+            if new_p != curr_p:
+                config['ai_persona'] = new_p
+                save_config(config)
+                st.toast("Personality Matrix Updated")
+        
+        with c2:
+            st.markdown("### 🎨 Visuals")
+            
+            lock_bg = st.toggle("Lock Current Background", value=config.get('lock_background', False))
+            if lock_bg != config.get('lock_background', False):
+                config['lock_background'] = lock_bg
+                save_config(config)
+                st.rerun()
+                
+            low_data = st.toggle("Low Data Mode (Save Bandwidth)", value=config.get('low_data_mode', False))
+            if low_data != config.get('low_data_mode', False):
+                config['low_data_mode'] = low_data
+                save_config(config)
+                st.rerun()
+
+        st.divider()
+        
+        st.markdown("### 🧬 User Context")
+        curr = st.text_area("Research Interests / Focus Areas", ", ".join(config.get('interests', [])))
+        if st.button("Update Interests"):
+            config['interests'] = [x.strip() for x in curr.split(",")]
+            save_config(config)
+            st.success("Profile Updated!")
+            
+        st.divider()
+        
+        with st.expander("⚠️ Danger Zone (Reset Data)", expanded=False):
+            if st.button("🔥 Clear Quiz History (Reset Progress)"):
+                config['quiz_history'] = []
+                save_config(config)
+                st.rerun()
+                
+            if st.button("🗑️ Clear Archived Sessions"):
+                config['archived_sessions'] = []
+                save_config(config)
+                st.rerun()
