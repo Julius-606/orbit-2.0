@@ -462,6 +462,4 @@ if config:
                     selected_p = config.get('ai_persona', "Standard Orbit")
                     persona_prompt = p_map.get(selected_p, p_map["Standard Orbit"])
 
-                    ctx = f"""
-                    {persona_prompt}
-   
+                    # 🔧 FIX: Extracting variables to prevent f-string 
