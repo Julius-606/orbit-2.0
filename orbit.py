@@ -237,12 +237,12 @@ async def send_chaos():
     
     print(f"🎲 Rolled a {roll}")
 
-    if roll <= 50:
+    if roll <= 20:
         print("Silence is golden.")
         return
 
-    # --- FACT MODE (51-85) ---
-    elif 51 <= roll <= 85:
+    # --- FACT MODE (21-45) ---
+    elif 21 <= roll <= 45:
         topic = random.choice(config['interests'])
         prompt = f"Tell me a mind-blowing, short random fact about {topic}. Keep it under 2 sentences."
         response = generate_content_safe(prompt)
@@ -250,8 +250,8 @@ async def send_chaos():
             msg = f"🎱 <b>Magic-∞ Fact:</b>\n\n{response.text}"
             await broadcast_message(bot, msg)
 
-    # --- MULTI-QUIZ MODE (86-98) ---
-    elif 86 <= roll <= 98:
+    # --- MULTI-QUIZ MODE (46-80) ---
+    elif 46 <= roll <= 80:
         quotes = [
             "Your coffee dependency is clinical at this point. ☕🩺",
             "Palpate the hustle. Percuss the procrastination. 🔨",
@@ -267,7 +267,7 @@ async def send_chaos():
         
         unit = random.choice(config['current_units'])
         quote = random.choice(quotes)
-        num_q = random.randint(1, 5) 
+        num_q = random.randint(1, 7) 
         
         await broadcast_message(bot, f"🚨 <b>{quote}</b>\n\nIncoming Rapid Fire: <b>{num_q} Questions on {unit}</b>")
         
@@ -304,7 +304,7 @@ async def send_chaos():
             except Exception as e:
                 print(f"Quiz Parse Error: {e}")
 
-    # --- 👑 GOD MODE: THE CLIFFHANGER (99-100) ---
+    # --- 👑 GOD MODE: THE CLIFFHANGER (81-100) ---
     else:
         await broadcast_message(bot, "👑 <b>GOD MODE ACTIVATED: THE MYSTERY CASE</b> 👑\n\n<i>Searching global medical archives...</i>")
         
@@ -367,3 +367,4 @@ async def send_chaos():
 
 if __name__ == "__main__":
     asyncio.run(send_chaos())
+
