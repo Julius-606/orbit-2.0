@@ -258,8 +258,8 @@ async def send_chaos():
             "Don't be the reason the attending sighs today. 😤",
             "Reviewing notes > Doomscrolling. 📱🚫",
             "You didn't survive Anatomy to die in Clinicals. Lock in. 💀",
-            "Sleep is for the weak... but also for memory consolidation. Go to bed. 🛌",
-            "C's get degrees, but knowledge saves lives. 🏥",
+            "Sleep is for the weak... but also for memory consolidation. Go to bed. 🛌, but first ...",
+            "A's get degrees, but knowledge saves lives. 🏥",
             "Is it imposter syndrome, or do you just need to study more? 📖👀",
             "Treat your goals like a critical patient: Constant monitoring required. 📉",
             "Future Dr. in the making. Act like it. 🥼"
